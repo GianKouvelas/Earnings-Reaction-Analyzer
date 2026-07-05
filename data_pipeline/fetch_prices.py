@@ -15,6 +15,7 @@ import pandas as pd
 from datetime import timedelta
 from sqlalchemy import text
 from data_pipeline.db import get_session
+from data_pipeline.calculations import calculate_pct_move
 
 
 def get_reported_earnings_events(session):
@@ -71,7 +72,7 @@ def get_price_window(symbol: str, report_date):
 
 
 def store_price_reaction(session, earnings_event_id: int, price_before: float, price_after: float):
-    pct_move = ((price_after - price_before) / price_before) * 100
+    pct_move = calculate_pct_move(price_before, price_after)
 
     session.execute(
         text("""
@@ -105,7 +106,7 @@ def main():
                 continue
 
             store_price_reaction(session, event_id, price_before, price_after)
-            pct = ((price_after - price_before) / price_before) * 100
+            pct = calculate_pct_move(price_before, price_after)
             print(f"  ✅ {symbol} {report_date}: {price_before:.2f} -> {price_after:.2f} ({pct:+.2f}%)")
             stored += 1
 

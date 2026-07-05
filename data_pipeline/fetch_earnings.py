@@ -11,6 +11,7 @@ import pandas as pd
 from datetime import datetime
 from sqlalchemy import text
 from data_pipeline.db import get_session
+from data_pipeline.calculations import calculate_surprise_pct
 
 # Our initial universe of tickers to track
 TICKERS = [
@@ -91,12 +92,7 @@ def upsert_earnings_events(session, symbol: str, ticker_id: int) -> int:
                 if eps_estimate is None and eps_actual is None:
                     continue
 
-                surprise_pct = None
-                if eps_estimate not in (None, 0) and eps_actual is not None:
-                    try:
-                        surprise_pct = ((eps_actual - eps_estimate) / abs(eps_estimate)) * 100
-                    except (TypeError, ZeroDivisionError):
-                        surprise_pct = None
+                surprise_pct = calculate_surprise_pct(eps_estimate, eps_actual)
 
                 session.execute(
                     text("""
