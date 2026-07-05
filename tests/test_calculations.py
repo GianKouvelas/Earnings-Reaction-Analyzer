@@ -6,7 +6,7 @@ Run with:
 """
 
 import pytest
-from data_pipeline.calculations import calculate_surprise_pct, calculate_pct_move
+from data_pipeline.calculations import calculate_surprise_pct, calculate_pct_move, calculate_implied_move_proxy
 
 
 # ---- Tests for calculate_surprise_pct ----
@@ -68,3 +68,27 @@ def test_pct_move_no_change():
 def test_pct_move_zero_price_before_raises_error():
     with pytest.raises(ValueError):
         calculate_pct_move(price_before=0.0, price_after=10.0)
+        
+
+# ---- Tests for calculate_implied_move_proxy ----
+
+def test_implied_move_proxy_basic_average():
+    # Average of absolute moves
+    result = calculate_implied_move_proxy([5.0, -10.0, 3.0, -2.0])
+    assert result == pytest.approx(5.0)  # (5+10+3+2)/4 = 5.0
+
+
+def test_implied_move_proxy_all_positive():
+    result = calculate_implied_move_proxy([2.0, 4.0, 6.0])
+    assert result == pytest.approx(4.0)
+
+
+def test_implied_move_proxy_empty_list_returns_none():
+    # No history yet (e.g. first earnings event for a ticker)
+    result = calculate_implied_move_proxy([])
+    assert result is None
+
+
+def test_implied_move_proxy_single_value():
+    result = calculate_implied_move_proxy([-7.5])
+    assert result == pytest.approx(7.5)
