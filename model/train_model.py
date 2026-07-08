@@ -2,18 +2,20 @@
 train_model.py: Trains a classification model to predict whether a stock's
 earnings-day price move will exceed its historical implied move.
 
-Step 1: chronological train/test split + baseline evaluation,
-before any real model. We need to know what "beating random guessing" means
-before we can claim our model is any good.
-
 Run directly:
     python3 -m model.train_model
 """
 
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from data_pipeline.build_features import build_feature_dataframe
 
 TEST_SET_FRACTION = 0.2  # last 20% of data (chronologically) held out for testing
+FEATURE_COLUMNS = ["surprise_pct", "implied_move", "market_cap"]  # numeric features
+CATEGORICAL_COLUMNS = ["sector"]
 
 
 def chronological_split(df: pd.DataFrame):
@@ -47,6 +49,68 @@ def baseline_accuracy(train_df: pd.DataFrame, test_df: pd.DataFrame) -> float:
     return accuracy, majority_class
 
 
+def preprocess_features(train_df: pd.DataFrame, test_df: pd.DataFrame):
+    """
+    Prepares features for the model:
+    - One-hot encodes the categorical `sector` column
+    - Scales numeric features (mean 0, std 1) — Logistic Regression is
+      sensitive to feature scale, since it optimizes based on distances/gradients
+    - IMPORTANT: the scaler is *fit* only on training data, then applied to
+      both train and test. Fitting on test data would leak information about
+      its distribution into training — a subtle form of lookahead bias.
+
+    Returns (X_train, X_test, y_train, y_test) ready for the model.
+    """
+    combined = pd.concat([train_df, test_df], keys=["train", "test"])
+    combined_encoded = pd.get_dummies(combined, columns=CATEGORICAL_COLUMNS)
+
+    encoded_feature_cols = [
+        c for c in combined_encoded.columns
+        if c in FEATURE_COLUMNS or c.startswith(tuple(f"{col}_" for col in CATEGORICAL_COLUMNS))
+    ]
+
+    train_encoded = combined_encoded.loc["train"]
+    test_encoded = combined_encoded.loc["test"]
+
+    X_train_raw = train_encoded[encoded_feature_cols]
+    X_test_raw = test_encoded[encoded_feature_cols]
+    y_train = train_encoded["exceeded_implied_move"]
+    y_test = test_encoded["exceeded_implied_move"]
+
+    scaler = StandardScaler()
+    X_train = X_train_raw.copy()
+    X_test = X_test_raw.copy()
+    X_train[FEATURE_COLUMNS] = scaler.fit_transform(X_train_raw[FEATURE_COLUMNS])
+    X_test[FEATURE_COLUMNS] = scaler.transform(X_test_raw[FEATURE_COLUMNS])
+
+    return X_train, X_test, y_train, y_test
+
+
+def train_and_evaluate(model, X_train, X_test, y_train, y_test):
+    model.fit(X_train, y_train)
+
+    predictions = model.predict(X_test)
+
+    metrics = {
+        "accuracy": accuracy_score(y_test, predictions),
+        "precision": precision_score(y_test, predictions),
+        "recall": recall_score(y_test, predictions),
+        "f1": f1_score(y_test, predictions),
+    }
+
+    return model, predictions, metrics
+
+
+def print_results(name: str, predictions, y_test, metrics: dict):
+    print(f"\n--- {name} results ---")
+    print(f"Accuracy:  {metrics['accuracy']:.2%}")
+    print(f"Precision: {metrics['precision']:.2%}")
+    print(f"Recall:    {metrics['recall']:.2%}")
+    print(f"F1 score:  {metrics['f1']:.2%}")
+    cm = confusion_matrix(y_test, predictions)
+    print(f"Confusion matrix:\n{cm}")
+
+
 def main():
     df = build_feature_dataframe()
     print(f"Total samples: {len(df)}")
@@ -57,7 +121,27 @@ def main():
 
     acc, majority_class = baseline_accuracy(train_df, test_df)
     print(f"\nBaseline (always predict '{majority_class}'): {acc:.2%} accuracy")
-    print("Any real model needs to clearly beat this to be worth using.")
+
+    X_train, X_test, y_train, y_test = preprocess_features(train_df, test_df)
+
+    # Logistic Regression
+    logreg = LogisticRegression(max_iter=1000)
+    logreg, logreg_preds, logreg_metrics = train_and_evaluate(logreg, X_train, X_test, y_train, y_test)
+    print_results("Logistic Regression", logreg_preds, y_test, logreg_metrics)
+    print(f"Improvement over baseline: {logreg_metrics['accuracy'] - acc:+.2%}")
+
+    # Random Forest — can capture non-linear relationships/interactions between
+    # features that Logistic Regression can't. Worth comparing on a dataset
+    # this size, though small data also means it can overfit more easily.
+    rf = RandomForestClassifier(n_estimators=200, max_depth=4, random_state=42)
+    rf, rf_preds, rf_metrics = train_and_evaluate(rf, X_train, X_test, y_train, y_test)
+    print_results("Random Forest", rf_preds, y_test, rf_metrics)
+    print(f"Improvement over baseline: {rf_metrics['accuracy'] - acc:+.2%}")
+
+    print("\n--- Summary ---")
+    print(f"Baseline:            {acc:.2%}")
+    print(f"Logistic Regression: {logreg_metrics['accuracy']:.2%} (F1={logreg_metrics['f1']:.2%})")
+    print(f"Random Forest:       {rf_metrics['accuracy']:.2%} (F1={rf_metrics['f1']:.2%})")
 
 
 if __name__ == "__main__":
