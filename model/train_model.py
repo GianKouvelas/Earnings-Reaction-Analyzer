@@ -14,7 +14,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from data_pipeline.build_features import build_feature_dataframe
 
 TEST_SET_FRACTION = 0.2  # last 20% of data (chronologically) held out for testing
-FEATURE_COLUMNS = ["surprise_pct", "implied_move", "market_cap"]  # numeric features
+FEATURE_COLUMNS = ["surprise_pct", "implied_move", "market_cap"]
 CATEGORICAL_COLUMNS = ["sector"]
 
 

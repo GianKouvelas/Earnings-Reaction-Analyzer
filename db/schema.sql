@@ -32,3 +32,5 @@ CREATE TABLE price_reactions (
 
 CREATE INDEX idx_earnings_events_ticker_id ON earnings_events(ticker_id);
 CREATE INDEX idx_price_reactions_earnings_event_id ON price_reactions(earnings_event_id);
+ALTER TABLE price_reactions ADD COLUMN surprise_streak INTEGER;
+ALTER TABLE price_reactions ADD COLUMN implied_move_trend NUMERIC;

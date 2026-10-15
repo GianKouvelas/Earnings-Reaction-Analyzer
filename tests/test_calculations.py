@@ -6,7 +6,13 @@ Run with:
 """
 
 import pytest
-from data_pipeline.calculations import calculate_surprise_pct, calculate_pct_move, calculate_implied_move_proxy
+from data_pipeline.calculations import (
+    calculate_surprise_pct,
+    calculate_pct_move,
+    calculate_implied_move_proxy,
+    calculate_surprise_streak,
+    calculate_implied_move_trend,
+)
 
 
 # ---- Tests for calculate_surprise_pct ----
@@ -92,3 +98,46 @@ def test_implied_move_proxy_empty_list_returns_none():
 def test_implied_move_proxy_single_value():
     result = calculate_implied_move_proxy([-7.5])
     assert result == pytest.approx(7.5)
+    
+
+# ---- Tests for calculate_surprise_streak ----
+
+def test_surprise_streak_no_history():
+    assert calculate_surprise_streak([]) == 0
+
+
+def test_surprise_streak_three_beats_in_a_row():
+    result = calculate_surprise_streak([-2, 5, 3, 7])
+    assert result == 3
+
+
+def test_surprise_streak_two_misses_in_a_row():
+    result = calculate_surprise_streak([5, -2, -3])
+    assert result == -2
+
+
+def test_surprise_streak_single_beat():
+    result = calculate_surprise_streak([-5, -3, 4])
+    assert result == 1
+
+
+def test_surprise_streak_stops_at_exact_inline():
+    result = calculate_surprise_streak([5, 3, 0, 4])
+    assert result == 1
+
+
+# ---- Tests for calculate_implied_move_trend ----
+
+def test_implied_move_trend_increasing_volatility():
+    result = calculate_implied_move_trend([2, 3, 8, 10], recent_window=2)
+    assert result == pytest.approx(6.5)
+
+
+def test_implied_move_trend_decreasing_volatility():
+    result = calculate_implied_move_trend([10, 8, 2, 3], recent_window=2)
+    assert result == pytest.approx(-6.5)
+
+
+def test_implied_move_trend_not_enough_history():
+    result = calculate_implied_move_trend([5, 3], recent_window=2)
+    assert result is None

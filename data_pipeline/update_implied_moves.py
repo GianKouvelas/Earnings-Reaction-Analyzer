@@ -1,10 +1,11 @@
 """
-update_implied_moves.py — Computes a historical-volatility proxy for "implied move"
-for each earnings event and stores it in price_reactions.implied_move.
+update_implied_moves.py — Computes historical-volatility-based features for each
+earnings event and stores them in price_reactions: implied_move, surprise_streak,
+implied_move_trend.
 
-Logic: for each ticker, ordered by report_date, the implied_move for event N
-is the average absolute pct_move of the *previous* LOOKBACK events (never
-including event N itself — that would be lookahead bias).
+Logic: for each ticker, ordered by report_date, every feature for event N is
+computed using only *previous* events — never event N itself or anything after it
+(avoiding lookahead bias).
 
 Run directly:
     python3 -m data_pipeline.update_implied_moves
@@ -12,20 +13,20 @@ Run directly:
 
 from sqlalchemy import text
 from data_pipeline.db import get_session
-from data_pipeline.calculations import calculate_implied_move_proxy
+from data_pipeline.calculations import (
+    calculate_implied_move_proxy,
+    calculate_surprise_streak,
+    calculate_implied_move_trend,
+)
 
-LOOKBACK = 4  # how many previous earnings events to average over
+LOOKBACK = 4  # how many previous earnings events to average over for implied_move
+TREND_WINDOW = 2  # recent vs older window size for the trend feature
 
 
 def get_price_reactions_by_ticker(session):
-    """
-    Returns all price_reactions joined with their ticker + report_date,
-    ordered by ticker then chronologically — so we can walk through each
-    ticker's history in order and compute a rolling average.
-    """
     result = session.execute(
         text("""
-            SELECT pr.id, t.symbol, ee.report_date, pr.pct_move
+            SELECT pr.id, t.symbol, ee.report_date, pr.pct_move, ee.surprise_pct
             FROM price_reactions pr
             JOIN earnings_events ee ON pr.earnings_event_id = ee.id
             JOIN tickers t ON ee.ticker_id = t.id
@@ -35,14 +36,21 @@ def get_price_reactions_by_ticker(session):
     return result.fetchall()
 
 
-def update_implied_move(session, price_reaction_id: int, implied_move: float):
+def update_features(session, price_reaction_id: int, implied_move, surprise_streak, implied_move_trend):
     session.execute(
         text("""
             UPDATE price_reactions
-            SET implied_move = :implied_move
+            SET implied_move = :implied_move,
+                surprise_streak = :surprise_streak,
+                implied_move_trend = :implied_move_trend
             WHERE id = :id
         """),
-        {"id": price_reaction_id, "implied_move": implied_move},
+        {
+            "id": price_reaction_id,
+            "implied_move": implied_move,
+            "surprise_streak": surprise_streak,
+            "implied_move_trend": implied_move_trend,
+        },
     )
 
 
@@ -52,31 +60,32 @@ def main():
     print(f"Processing {len(rows)} price reactions across all tickers.\n")
 
     updated = 0
-    skipped_no_history = 0
     current_symbol = None
-    history = []
+    move_history = []
+    surprise_history = []
 
-    for pr_id, symbol, report_date, pct_move in rows:
+    for pr_id, symbol, report_date, pct_move, surprise_pct in rows:
         if symbol != current_symbol:
             current_symbol = symbol
-            history = []
+            move_history = []
+            surprise_history = []
 
-        previous_moves = history[-LOOKBACK:]
+        previous_moves = move_history[-LOOKBACK:]
         implied_move = calculate_implied_move_proxy(previous_moves)
+        surprise_streak = calculate_surprise_streak(surprise_history)
+        implied_move_trend = calculate_implied_move_trend(move_history, recent_window=TREND_WINDOW)
 
-        if implied_move is None:
-            skipped_no_history += 1
-        else:
-            update_implied_move(session, pr_id, implied_move)
-            updated += 1
+        update_features(session, pr_id, implied_move, surprise_streak, implied_move_trend)
+        updated += 1
 
-        history.append(pct_move)
+        move_history.append(pct_move)
+        if surprise_pct is not None:
+            surprise_history.append(surprise_pct)
 
     session.commit()
     session.close()
 
-    print(f"Updated implied_move for {updated} price reactions.")
-    print(f"Skipped {skipped_no_history} (not enough history yet, e.g. first {LOOKBACK} events per ticker).")
+    print(f"Updated features for {updated} price reactions.")
 
 
 if __name__ == "__main__":
