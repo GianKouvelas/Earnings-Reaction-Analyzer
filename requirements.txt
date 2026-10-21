@@ -2,3 +2,5 @@ lxml
 scikit-learn
 shap
 matplotlib
+fastapi
+uvicorn
