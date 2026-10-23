@@ -3,6 +3,7 @@ main.py: FastAPI backend for the Earnings Reaction Analyzer.
 
 Endpoints:
     GET /health                  - liveness check + model info
+    GET /tickers                 - list of all the companies
     GET /history/{ticker}        - past earnings reactions from the database
     GET /predict/{ticker}        - probability that the next earnings move will
                                    exceed the implied move, for a given surprise_pct
@@ -17,6 +18,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -38,6 +40,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Earnings Reaction Analyzer", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],  # Vite dev server
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 
 # ---------- Response models ----------
@@ -63,6 +72,12 @@ class PredictionResponse(BaseModel):
     implied_move: float
     probability_exceeds_implied_move: float
     prediction: bool
+    
+
+class TickerItem(BaseModel):
+    symbol: str
+    company_name: str
+    sector: Optional[str]
 
 
 # ---------- Helpers ----------
@@ -92,6 +107,19 @@ def health():
         "model_trained_at": artifact["trained_at"],
         "model_n_samples": artifact["n_samples"],
     }
+
+
+@app.get("/tickers", response_model=list[TickerItem])
+def list_tickers():
+    session = get_session()
+    try:
+        rows = session.execute(
+            text("SELECT symbol, company_name, sector FROM tickers ORDER BY symbol")
+        ).fetchall()
+    finally:
+        session.close()
+
+    return [TickerItem(symbol=r.symbol, company_name=r.company_name, sector=r.sector) for r in rows]
 
 
 @app.get("/history/{symbol}", response_model=HistoryResponse)

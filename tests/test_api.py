@@ -25,6 +25,7 @@ def client():
 
 # ---- /health ----
 
+
 def test_health_returns_ok_and_model_info(client):
     response = client.get("/health")
     assert response.status_code == 200
@@ -34,6 +35,7 @@ def test_health_returns_ok_and_model_info(client):
 
 
 # ---- /history ----
+
 
 def test_history_known_ticker(client):
     response = client.get("/history/NVDA")
@@ -67,6 +69,7 @@ def test_history_invalid_limit_returns_422(client):
 
 # ---- /predict ----
 
+
 def test_predict_returns_valid_probability(client):
     response = client.get("/predict/NVDA?surprise_pct=5")
     assert response.status_code == 200
@@ -94,3 +97,13 @@ def test_predict_out_of_range_surprise_pct_returns_422(client):
 def test_predict_prediction_matches_probability(client):
     body = client.get("/predict/NVDA?surprise_pct=5").json()
     assert body["prediction"] == (body["probability_exceeds_implied_move"] >= 0.5)
+    
+    
+# ---- /tickers ----
+
+def test_tickers_lists_all_symbols(client):
+    response = client.get("/tickers")
+    assert response.status_code == 200
+    symbols = [t["symbol"] for t in response.json()]
+    assert "NVDA" in symbols
+    assert symbols == sorted(symbols)
