@@ -5,8 +5,9 @@ import {
   Line,
   XAxis,
   YAxis,
+  Cell,
+  ReferenceLine,
   Tooltip,
-  Legend,
   CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
@@ -21,6 +22,31 @@ async function fetchJson(path, signal) {
     throw new Error(body.detail ?? `Request failed (${response.status})`);
   }
   return response.json();
+}
+
+function MoveTooltip({ active, payload }) {
+  if (!active || !payload || payload.length === 0) return null;
+  const point = payload[0].payload;
+  const sign = point.move > 0 ? "+" : "";
+  const hasExpected = point.implied !== null && point.implied !== undefined;
+
+  return (
+    <div className="tooltip">
+      <strong>{point.date}</strong>
+      <div>
+        Move: {sign}
+        {point.move.toFixed(2)}%
+      </div>
+      {hasExpected && <div>Expected: ±{point.implied.toFixed(2)}%</div>}
+      {hasExpected && (
+        <div>
+          {Math.abs(point.move) > point.implied
+            ? "Exceeded expectation"
+            : "Within expectation"}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function App() {
@@ -91,8 +117,9 @@ export default function App() {
         .reverse() // API returns newest first, chart needs oldest first
         .map((e) => ({
           date: e.report_date,
-          move: Math.abs(e.pct_move),
+          move: e.pct_move, // signed: positive = up, negative = down
           implied: e.implied_move,
+          impliedNeg: e.implied_move !== null ? -e.implied_move : null,
         }))
     : [];
 
@@ -157,27 +184,45 @@ export default function App() {
       </section>
 
       <section className="card">
-        <h2>History: actual move vs. expected move</h2>
+        <h2>History: actual move vs. expected range</h2>
         {chartData.length === 0 ? (
           <p className="muted">Loading…</p>
         ) : (
-          <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis unit="%" />
-              <Tooltip formatter={(v) => `${Number(v).toFixed(2)}%`} />
-              <Legend />
-              <Bar dataKey="move" name="Actual move (absolute)" fill="#6366f1" />
-              <Line
-                dataKey="implied"
-                name="Expected move"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                dot={false}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <>
+            <ResponsiveContainer width="100%" height={340}>
+              <ComposedChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={24} />
+                <YAxis unit="%" />
+                <Tooltip content={<MoveTooltip />} />
+                <ReferenceLine y={0} stroke="#9ca3af" />
+                <Bar dataKey="move" name="Actual move">
+                  {chartData.map((d) => (
+                    <Cell key={d.date} fill={d.move >= 0 ? "#16a34a" : "#dc2626"} />
+                  ))}
+                </Bar>
+                <Line
+                  dataKey="implied"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  strokeDasharray="5 3"
+                  dot={false}
+                />
+                <Line
+                  dataKey="impliedNeg"
+                  stroke="#f59e0b"
+                  strokeWidth={2}
+                  strokeDasharray="5 3"
+                  dot={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <p className="muted">
+              Green = stock rose, red = stock fell. Dashed orange lines = expected range
+              (±). A bar reaching beyond the dashed lines means the move exceeded
+              expectations.
+            </p>
+          </>
         )}
       </section>
 
