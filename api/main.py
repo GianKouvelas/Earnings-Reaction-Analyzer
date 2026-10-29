@@ -12,7 +12,7 @@ Run locally:
     uvicorn api.main:app --reload
 Interactive docs: http://127.0.0.1:8000/docs
 """
-
+import os
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Optional
@@ -41,9 +41,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Earnings Reaction Analyzer", lifespan=lifespan)
 
+allowed_origins = os.getenv(
+    "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],  # Vite dev server
+    allow_origins=allowed_origins,
     allow_methods=["GET"],
     allow_headers=["*"],
 )
